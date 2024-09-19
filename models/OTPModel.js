@@ -1,49 +1,85 @@
 const { getDB } = require("../config/mongoDB");
 const { ObjectId } = require("mongodb");
 const cron = require("node-cron");
+const { createError } = require("../services/responseHandler");
 
 const OTP_COLLECTION = "otps";
 
+const handleDBOperation = async (operation) => {
+  const db = getDB();
+  try {
+    return await operation(db.collection(OTP_COLLECTION));
+  } catch (error) {
+    console.error(`Error in ${operation.name}: `, error);
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
+  }
+};
+
 const OTPModel = {
   storeOTP: async (email, otp, role) => {
-    const db = getDB();
+    return handleDBOperation(async (collection) => {
+      if (!email || !otp || !role) {
+        throw createError(
+          "Email, OTP, and role are required",
+          400,
+          "MISSING_REQUIRED_FIELDS"
+        );
+      }
 
-    await db.collection(OTP_COLLECTION).deleteOne({ email, role });
+      await collection.deleteOne({ email, role });
 
-    await db.collection(OTP_COLLECTION).insertOne({
-      email,
-      otp,
-      role,
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      const result = await collection.insertOne({
+        email,
+        otp,
+        role,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      });
+
+      if (!result.insertedId) {
+        throw createError("Failed to store OTP", 500, "OTP_STORAGE_FAILED");
+      }
+
+      return result.insertedId;
     });
   },
 
   verifyOTP: async (email, otp, role) => {
-    const db = getDB();
-    const otpRecord = await db
-      .collection(OTP_COLLECTION)
-      .findOne({ email, otp, role });
-    if (!otpRecord || new Date() > otpRecord.expiresAt) {
-      if (otpRecord) {
-        await db
-          .collection(OTP_COLLECTION)
-          .deleteOne({ _id: new ObjectId(otpRecord._id) });
+    return handleDBOperation(async (collection) => {
+      if (!email || !otp || !role) {
+        throw createError(
+          "Email, OTP, and role are required",
+          400,
+          "MISSING_REQUIRED_FIELDS"
+        );
       }
-      return false;
-    }
-    await db
-      .collection(OTP_COLLECTION)
-      .deleteOne({ _id: new ObjectId(otpRecord._id) });
-    return true;
+
+      const otpRecord = await collection.findOne({ email, otp, role });
+
+      if (!otpRecord) {
+        throw createError("Invalid OTP", 400, "INVALID_OTP");
+      }
+
+      if (new Date() > otpRecord.expiresAt) {
+        await collection.deleteOne({ _id: new ObjectId(otpRecord._id) });
+        throw createError("OTP has expired", 400, "EXPIRED_OTP");
+      }
+
+      await collection.deleteOne({ _id: new ObjectId(otpRecord._id) });
+      return true;
+    });
   },
 
   cleanExpiredOTPs: async () => {
-    const db = getDB();
-    const result = await db.collection(OTP_COLLECTION).deleteMany({
-      expiresAt: { $lt: new Date() },
+    return handleDBOperation(async (collection) => {
+      await collection.deleteMany({
+        expiresAt: { $lt: new Date() },
+      });
     });
-    // console.log(`Deleted ${result.deletedCount} expired OTPs`);
   },
 };
 

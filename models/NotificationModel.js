@@ -1,5 +1,7 @@
 const { getDB } = require("../config/mongoDB");
 const Joi = require("joi");
+const { ObjectId } = require("mongodb");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "notifications";
 const notificationSchema = Joi.object({
@@ -11,52 +13,99 @@ const notificationSchema = Joi.object({
   created_at: Joi.date().default(Date.now),
 }).options({ abortEarly: false });
 
-const createNotification = async (notificationData) => {
+const validateNotification = (data) => {
+  const { error } = notificationSchema.validate(data);
+  if (error) {
+    throw createError(
+      `Validation error: ${error.details.map((d) => d.message).join(", ")}`,
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+};
+
+const handleDBOperation = async (operation) => {
   const db = await getDB();
   try {
-    await db.collection(COLLECTION_NAME).insertOne(notificationData);
+    return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
-    console.error("Error in createNotification: ", error);
-    throw error;
+    console.error(`Error in ${operation.name}: `, error);
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
   }
+};
+
+const createNotification = async (notificationData) => {
+  return handleDBOperation(async (collection) => {
+    validateNotification(notificationData);
+    const result = await collection.insertOne(notificationData);
+    if (!result.insertedId) {
+      throw createError(
+        "Failed to create notification",
+        500,
+        "NOTIFICATION_CREATION_FAILED"
+      );
+    }
+    return result.insertedId;
+  });
 };
 
 const getNotifications = async (user_id) => {
-  const db = await getDB();
-  try {
-    return await db.collection(COLLECTION_NAME).find({ user_id }).toArray();
-  } catch (error) {
-    console.error("Error in getNotifications: ", error);
-    throw error;
-  }
+  return handleDBOperation(async (collection) => {
+    const notifications = await collection.find({ user_id }).toArray();
+    if (!notifications || notifications.length === 0) {
+      throw createError(
+        "No notifications found for this user",
+        404,
+        "NOTIFICATIONS_NOT_FOUND"
+      );
+    }
+    return notifications;
+  });
 };
 
 const markAsRead = async (user_id, notification_id) => {
-  const db = await getDB();
-  try {
-    await db
-      .collection(COLLECTION_NAME)
-      .updateOne(
-        { _id: new ObjectId(notification_id), user_id },
-        { $set: { status: "read" } }
+  return handleDBOperation(async (collection) => {
+    const result = await collection.updateOne(
+      { _id: new ObjectId(notification_id), user_id },
+      { $set: { status: "read" } }
+    );
+    if (result.matchedCount === 0) {
+      throw createError(
+        "Notification not found",
+        404,
+        "NOTIFICATION_NOT_FOUND"
       );
-  } catch (error) {
-    console.error("Error in markAsRead: ", error);
-    throw error;
-  }
+    }
+    if (result.modifiedCount === 0) {
+      throw createError(
+        "Notification already marked as read",
+        400,
+        "NOTIFICATION_ALREADY_READ"
+      );
+    }
+    return result;
+  });
 };
 
 const deleteNotification = async (user_id, notification_id) => {
-  const db = await getDB();
-  try {
-    await db.collection(COLLECTION_NAME).deleteOne({
+  return handleDBOperation(async (collection) => {
+    const result = await collection.deleteOne({
       _id: new ObjectId(notification_id),
       user_id,
     });
-  } catch (error) {
-    console.error("Error in deleteNotification: ", error);
-    throw error;
-  }
+    if (result.deletedCount === 0) {
+      throw createError(
+        "Notification not found",
+        404,
+        "NOTIFICATION_NOT_FOUND"
+      );
+    }
+    return result;
+  });
 };
 
 module.exports = {

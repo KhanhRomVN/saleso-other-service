@@ -1,13 +1,5 @@
 const { GalleryModel } = require("../models");
-
-const handleRequest = async (req, res, operation) => {
-  try {
-    const result = await operation(req);
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+const { handleRequest, createError } = require("../services/responseHandler");
 
 const determineStatus = (startDate, endDate) => {
   const now = new Date();
@@ -27,6 +19,9 @@ const GalleryController = {
   createImage: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { image_uri, type, ratio, path, startDate, endDate } = req.body;
+      if (!image_uri || !type || !ratio || !path || !startDate || !endDate) {
+        throw createError("Missing required fields", 400, "MISSING_FIELDS");
+      }
       const status = determineStatus(startDate, endDate);
       const imageData = {
         image_uri,
@@ -46,6 +41,9 @@ const GalleryController = {
   deleteImage: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { image_id } = req.params;
+      if (!image_id) {
+        throw createError("Image ID is required", 400, "MISSING_IMAGE_ID");
+      }
       await GalleryModel.deleteImage(image_id);
       return { success: "Delete image/gallery success" };
     }),
@@ -53,14 +51,31 @@ const GalleryController = {
   getImage: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { image_id } = req.params;
-      return await GalleryModel.getImageById(image_id);
+      if (!image_id) {
+        throw createError("Image ID is required", 400, "MISSING_IMAGE_ID");
+      }
+      const image = await GalleryModel.getImageById(image_id);
+      if (!image) {
+        throw createError("Image not found", 404, "IMAGE_NOT_FOUND");
+      }
+      return image;
     }),
 
   updatePath: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { image_id } = req.params;
       const { path } = req.body;
+      if (!image_id || !path) {
+        throw createError(
+          "Image ID and path are required",
+          400,
+          "MISSING_FIELDS"
+        );
+      }
       const updatedImage = await GalleryModel.updateImagePath(image_id, path);
+      if (!updatedImage) {
+        throw createError("Image not found", 404, "IMAGE_NOT_FOUND");
+      }
       return { success: "Image path updated successfully", updatedImage };
     }),
 
@@ -100,11 +115,17 @@ const GalleryController = {
         skip: (parseInt(page) - 1) * parseInt(limit),
       };
 
-      return await GalleryModel.getFilteredAndSortedImages(
+      const result = await GalleryModel.getFilteredAndSortedImages(
         filters,
         sortOptions,
         pagination
       );
+
+      if (!result || result.length === 0) {
+        throw createError("No images found", 404, "NO_IMAGES_FOUND");
+      }
+
+      return result;
     }),
 };
 
