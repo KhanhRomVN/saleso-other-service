@@ -30,7 +30,7 @@ const OTPModel = {
         );
       }
 
-      await collection.deleteOne({ email, role });
+      await collection.deleteMany({ email });
 
       const result = await collection.insertOne({
         email,

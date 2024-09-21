@@ -1,6 +1,5 @@
 const express = require("express");
 const { GalleryController } = require("../controllers");
-// const { authEmployeeToken } = require("../../middleware/authToken");
 const router = express.Router();
 
 const routes = [
