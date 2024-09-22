@@ -1,20 +1,33 @@
 const { getDB } = require("../config/mongoDB");
 const Joi = require("joi");
-const { ObjectId } = require("mongodb");
 const { createError } = require("../services/responseHandler");
+const { ObjectId } = require("mongodb");
 
 const COLLECTION_NAME = "notifications";
-const notificationSchema = Joi.object({
-  user_id: Joi.string().required(),
-  message: Joi.string().required(),
-  link: Joi.string(),
-  type: Joi.string().required(),
-  status: Joi.string().valid("read", "unread").default("unread"),
+const COLLECTION_SCHEMA = Joi.object({
+  title: Joi.string().required(),
+  content: Joi.string().required(),
+  // notification_type is an enum of "feedback_notification", "marketing_notification", "server_announcement"
+  notification_type: Joi.string().required(),
+  target_type: Joi.string()
+    .valid("individual", "group", "role", "server-wide")
+    .required(),
+  // target_role is only required for "role" target_type
+  target_role: Joi.string().valid("seller", "customer"),
+  // target is an array of user ids for individual notifications and only for individual and group notifications
+  target_ids: Joi.array().items(Joi.string()).required(),
+  // exxample: if notification_type is "feedback_notification", related is the feedback_id
+  related: Joi.object({
+    path: Joi.string().optional(),
+  }).optional(),
+  can_delete: Joi.boolean().required(),
+  can_mark_as_read: Joi.boolean().required(),
+  is_read: Joi.boolean().required(),
   created_at: Joi.date().default(Date.now),
 }).options({ abortEarly: false });
 
 const validateNotification = (data) => {
-  const { error } = notificationSchema.validate(data);
+  const { error } = COLLECTION_SCHEMA.validate(data);
   if (error) {
     throw createError(
       `Validation error: ${error.details.map((d) => d.message).join(", ")}`,
@@ -38,79 +51,68 @@ const handleDBOperation = async (operation) => {
   }
 };
 
-const createNotification = async (notificationData) => {
-  return handleDBOperation(async (collection) => {
-    validateNotification(notificationData);
-    const result = await collection.insertOne(notificationData);
-    if (!result.insertedId) {
-      throw createError(
-        "Failed to create notification",
-        500,
-        "NOTIFICATION_CREATION_FAILED"
-      );
-    }
-    return result.insertedId;
-  });
-};
-
-const getNotifications = async (user_id) => {
-  return handleDBOperation(async (collection) => {
-    const notifications = await collection.find({ user_id }).toArray();
-    if (!notifications || notifications.length === 0) {
-      throw createError(
-        "No notifications found for this user",
-        404,
-        "NOTIFICATIONS_NOT_FOUND"
-      );
-    }
-    return notifications;
-  });
-};
-
-const markAsRead = async (user_id, notification_id) => {
-  return handleDBOperation(async (collection) => {
-    const result = await collection.updateOne(
-      { _id: new ObjectId(notification_id), user_id },
-      { $set: { status: "read" } }
-    );
-    if (result.matchedCount === 0) {
-      throw createError(
-        "Notification not found",
-        404,
-        "NOTIFICATION_NOT_FOUND"
-      );
-    }
-    if (result.modifiedCount === 0) {
-      throw createError(
-        "Notification already marked as read",
-        400,
-        "NOTIFICATION_ALREADY_READ"
-      );
-    }
-    return result;
-  });
-};
-
-const deleteNotification = async (user_id, notification_id) => {
-  return handleDBOperation(async (collection) => {
-    const result = await collection.deleteOne({
-      _id: new ObjectId(notification_id),
-      user_id,
+const NotificationModel = {
+  createNotification: async (notification) => {
+    validateNotification(notification);
+    return handleDBOperation(async (collection) => {
+      await collection.insertOne(notification);
+      // Gửi thông báo qua SSE
+      const sendSSENotification = req.app.get("sendSSENotification");
+      if (sendSSENotification) {
+        notification.target_ids.forEach((userId) => {
+          sendSSENotification(userId, result);
+        });
+      }
     });
-    if (result.deletedCount === 0) {
-      throw createError(
-        "Notification not found",
-        404,
-        "NOTIFICATION_NOT_FOUND"
+  },
+
+  getNotificationByUserId: async (userId, role, page = 1) => {
+    return handleDBOperation(async (collection) => {
+      const query = {
+        $or: [
+          { target_type: "individual", target_ids: userId },
+          { target_type: "group", target_ids: userId },
+          { target_type: "role", target_role: role },
+          { target_type: "server-wide" },
+        ],
+      };
+
+      return await collection
+        .find(query)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * 5)
+        .limit(5)
+        .toArray();
+    });
+  },
+
+  getNotificationById: async (userId, role, notificationId) => {
+    return handleDBOperation(async (collection) => {
+      const result = await collection.findOne({
+        _id: new ObjectId(notificationId),
+        user_id: userId,
+        role,
+      });
+      return result;
+    });
+  },
+
+  markNotificationAsRead: async (notificationId) => {
+    return handleDBOperation(async (collection) => {
+      const result = await collection.updateOne(
+        { _id: notificationId },
+        { $set: { is_read: true } }
       );
-    }
-    return result;
-  });
+      return result;
+    });
+  },
+
+  deleteNotification: async (notificationId) => {
+    return handleDBOperation(async (collection) => {
+      const result = await collection.deleteOne({ _id: notificationId });
+      return result;
+    });
+  },
 };
 
-module.exports = {
-  createNotification,
-  getNotifications,
-  markAsRead,
-  deleteNotification,
-};
+module.exports = NotificationModel;

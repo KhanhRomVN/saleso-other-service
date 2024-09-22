@@ -1,26 +1,20 @@
 const express = require("express");
-const { NotificationController } = require("../controllers");
+const { NotificationPreferencesController } = require("../controllers");
 const { authToken } = require("../middleware/authToken");
 const router = express.Router();
 
 const routes = [
   {
     method: "get",
-    path: "/:page",
+    path: "/preferences",
     middleware: [authToken],
-    handler: NotificationController.getNotificationByUser,
+    handler: NotificationPreferencesController.getNotificationPreferences,
   },
   {
     method: "put",
-    path: "/mark-as-read/:notification_id",
+    path: "/preferences/:preferences_name",
     middleware: [authToken],
-    handler: NotificationController.markNotificationAsRead,
-  },
-  {
-    method: "delete",
-    path: "/:notification_id",
-    middleware: [authToken],
-    handler: NotificationController.deleteNotification,
+    handler: NotificationPreferencesController.updateNotificationPreferences,
   },
 ];
 

@@ -31,6 +31,9 @@ const corsOptions = {
 const app = express();
 const server = http.createServer(app);
 
+// Quản lý các kết nối SSE
+const sseClients = new Map();
+
 //* Middleware
 app.use(express.static("public"));
 app.use(helmet());
@@ -39,13 +42,59 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// SSE endpoint
+app.get("/sse/:user_id", (req, res) => {
+  const userId = req.params.user_id;
+  if (!userId) {
+    return res.status(400).send("UserId is required");
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  const clientId = Date.now();
+  const newClient = {
+    id: clientId,
+    res,
+  };
+
+  if (!sseClients.has(userId)) {
+    sseClients.set(userId, new Set());
+  }
+  sseClients.get(userId).add(newClient);
+
+  req.on("close", () => {
+    if (sseClients.has(userId)) {
+      sseClients.get(userId).delete(newClient);
+      if (sseClients.get(userId).size === 0) {
+        sseClients.delete(userId);
+      }
+    }
+  });
+});
+
+// Hàm gửi thông báo SSE
+const sendSSENotification = (userId, data) => {
+  if (sseClients.has(userId)) {
+    sseClients.get(userId).forEach((client) => {
+      client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+    });
+  }
+};
+
+// Đặt sendSSENotification làm thuộc tính của app
+app.set("sendSSENotification", sendSSENotification);
+
 //* API Routes
 Object.entries(routes).forEach(([path, router]) => {
   app.use(`/${path}`, router);
 });
 
 //* Error Handling Middleware
-app.use((err, res) => {
+app.use((err, req, res, next) => {
   sendError(res, err);
 });
 
