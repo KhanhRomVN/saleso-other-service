@@ -1,19 +1,5 @@
 const { NotificationPreferencesModel } = require("../models");
-const { handleRequest, createError } = require("../services/responseHandler");
-
-const determineStatus = (startDate, endDate) => {
-  const now = new Date();
-  startDate = new Date(startDate);
-  endDate = new Date(endDate);
-
-  if (now.getTime() < startDate.getTime()) return "upcoming";
-  if (
-    now.getTime() >= startDate.getTime() &&
-    now.getTime() <= endDate.getTime()
-  )
-    return "ongoing";
-  return "expired";
-};
+const { handleRequest } = require("../services/responseHandler");
 
 const NotificationPreferencesController = {
   getNotificationPreferences: (req, res) =>
@@ -24,6 +10,7 @@ const NotificationPreferencesController = {
         req.user.role
       );
     }),
+
   updateNotificationPreferences: (req, res) =>
     handleRequest(req, res, async (req) => {
       const user_id = req.user._id.toString();

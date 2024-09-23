@@ -159,14 +159,11 @@ const GalleryModel = {
         },
         { $set: { status: "expired", updated_at: now } }
       );
-
-      console.log("Daily status update completed successfully.");
     });
   },
 };
 
 cron.schedule("0 0 * * *", async () => {
-  console.log("Running daily status update...");
   try {
     await GalleryModel.changeStatusDaily();
   } catch (error) {

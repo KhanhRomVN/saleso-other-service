@@ -55,14 +55,20 @@ const NotificationModel = {
   createNotification: async (notification) => {
     validateNotification(notification);
     return handleDBOperation(async (collection) => {
-      await collection.insertOne(notification);
-      // Gửi thông báo qua SSE
-      const sendSSENotification = req.app.get("sendSSENotification");
+      const result = await collection.insertOne(notification);
+
+      // Send notification via SSE
+      const sendSSENotification = global.sendSSENotification;
       if (sendSSENotification) {
         notification.target_ids.forEach((userId) => {
-          sendSSENotification(userId, result);
+          sendSSENotification(userId, {
+            ...notification,
+            _id: result.insertedId,
+          });
         });
       }
+
+      return result;
     });
   },
 

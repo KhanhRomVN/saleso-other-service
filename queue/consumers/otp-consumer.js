@@ -11,11 +11,9 @@ const startOTPConsumers = async () => {
     // Consumer for storeOTP
     const storeOTPQueue = "store_otp_queue";
     await channel.assertQueue(storeOTPQueue, { durable: false });
-    console.log(`[Auth Service] Waiting for messages in ${storeOTPQueue}`);
 
     channel.consume(storeOTPQueue, async (msg) => {
       const { email, otp, role } = JSON.parse(msg.content.toString());
-      console.log("Received request to store OTP for email:", email);
 
       try {
         const result = await OTPModel.storeOTP(email, otp, role);
@@ -39,11 +37,9 @@ const startOTPConsumers = async () => {
     // Consumer for verifyOTP
     const verifyOTPQueue = "verify_otp_queue";
     await channel.assertQueue(verifyOTPQueue, { durable: false });
-    console.log(`[Auth Service] Waiting for messages in ${verifyOTPQueue}`);
 
     channel.consume(verifyOTPQueue, async (msg) => {
       const { email, otp, role } = JSON.parse(msg.content.toString());
-      console.log("Received request to verify OTP for email:", email);
 
       try {
         const result = await OTPModel.verifyOTP(email, otp, role);

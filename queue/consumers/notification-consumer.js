@@ -9,32 +9,20 @@ async function startCreateNotificationConsumer() {
   try {
     connection = await amqp.connect(RABBITMQ_URL);
     const channel = await connection.createChannel();
-
     await channel.assertQueue(CREATE_NOTIFICATION_QUEUE, { durable: true });
-    console.log(`Waiting for messages in queue: ${CREATE_NOTIFICATION_QUEUE}`);
-
     channel.prefetch(1);
-
     channel.consume(
       CREATE_NOTIFICATION_QUEUE,
       async (msg) => {
         if (msg !== null) {
           const notificationData = JSON.parse(msg.content.toString());
-          console.log(
-            `Received create notification request: ${notificationData.title}`
-          );
 
           try {
             await NotificationModel.createNotification(notificationData);
-            console.log(`Created notification: ${notificationData.title}`);
-
             channel.ack(msg);
           } catch (error) {
-            console.error(
-              "Error processing create notification message:",
-              error
-            );
-            // Nếu xử lý thất bại, gửi lại message vào queue sau 5 giây
+            console.error("Error processing notification:", error);
+            // If processing fails, requeue the message after 5 seconds
             setTimeout(() => {
               channel.nack(msg);
             }, 5000);
@@ -44,8 +32,8 @@ async function startCreateNotificationConsumer() {
       { noAck: false }
     );
   } catch (error) {
-    console.error("Error in create notification consumer:", error);
-    // Thử kết nối lại sau 5 giây nếu có lỗi
+    console.error("Error in consumer:", error);
+    // Try to reconnect after 5 seconds if there's an error
     setTimeout(startCreateNotificationConsumer, 5000);
   }
 }

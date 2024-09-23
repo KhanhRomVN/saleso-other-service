@@ -84,12 +84,15 @@ const NotificationPreferencesModel = {
         user_id: userId,
         role: role,
       });
-      if (!userPreferences || !userPreferences.preferences) {
-        return [];
+      if (!userPreferences) {
+        return {};
       }
       return Object.entries(userPreferences.preferences)
         .filter(([_, value]) => value === true)
-        .map(([key]) => key);
+        .reduce((acc, [key, value]) => {
+          acc[key] = value;
+          return acc;
+        }, {});
     });
   },
 
