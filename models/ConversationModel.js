@@ -63,11 +63,14 @@ const ConversationModel = {
     });
   },
 
-  getListConversationByUserId: async (user_id) => {
+  getListConversationByUserId: async (user_id, role) => {
     return handleDBOperation(async (collection) => {
-      return await collection
-        .find({ $or: [{ customer_id: user_id }, { seller_id: user_id }] })
-        .toArray();
+      if (role === "seller") {
+        return await collection.find({ seller_id: user_id }).toArray();
+      } else if (role === "customer") {
+        return await collection.find({ customer_id: user_id }).toArray();
+      }
+      return await collection.find(query).toArray();
     });
   },
 

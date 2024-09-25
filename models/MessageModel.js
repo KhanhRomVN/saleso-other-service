@@ -3,7 +3,7 @@ const Joi = require("joi");
 const { createError } = require("../services/responseHandler");
 const { ObjectId } = require("mongodb");
 
-const COLLECTION_NAME = "conversation";
+const COLLECTION_NAME = "messages";
 const COLLECTION_SCHEMA = Joi.object({
   conversation_id: Joi.string().required(),
   message: Joi.string().required(),
